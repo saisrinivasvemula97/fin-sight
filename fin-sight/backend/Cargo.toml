@@ -19,7 +19,6 @@ serde_json = "1.0"
 
 # Authentication & Security
 jsonwebtoken = "9.3"
-argon2 = "0.6.0-rc.7"
 
 # Configuration
 dotenvy = "0.15"

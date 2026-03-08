@@ -166,6 +166,36 @@ pub struct NetWorth {
     pub net_worth: f64,
 }
 
+// ─── Authentication Models ─────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Claims {
+    pub sub: String,  // user id
+    pub email: String,
+    pub exp: usize,   // expiration time
+    pub iat: usize,   // issued at time
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AuthRequest {
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AuthResponse {
+    pub access_token: String,
+    pub token_type: String,
+    pub expires_in: i64,
+    pub user: AuthUser,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AuthUser {
+    pub id: String,
+    pub email: String,
+}
+
 // ─── API Response Models ───────────────────────────────────────────────────
 
 #[derive(Debug, Serialize)]

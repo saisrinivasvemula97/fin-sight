@@ -11,6 +11,7 @@ use sqlx::SqlitePool;
 mod database;
 mod models;
 mod repositories;
+mod auth;
 
 // Shared application state
 #[derive(Clone)]
@@ -87,6 +88,9 @@ async fn main() {
         // Analytics routes
         .route("/api/analytics/category-summary", get(get_category_summary))
         .route("/api/analytics/net-worth/{user_id}", get(get_net_worth))
+        // Authentication routes
+        .route("/api/auth/register", post(register))
+        .route("/api/auth/login", post(login))
         .layer(
             ServiceBuilder::new()
                 .layer(CorsLayer::permissive())
@@ -319,4 +323,75 @@ async fn get_net_worth(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     
     Ok(AxumJson(ApiResponse::success(net_worth)))
+}
+
+// Authentication handlers
+async fn register(
+    State(state): State<AppState>,
+    Json(payload): Json<AuthRequest>,
+) -> Result<AxumJson<ApiResponse<AuthResponse>>, StatusCode> {
+    // Check if user already exists
+    if state.user_repo.find_by_email(&payload.email).await.unwrap().is_some() {
+        return Err(StatusCode::CONFLICT);
+    }
+
+    // Hash password
+    let password_hash = auth::hash_password(&payload.password);
+
+    // Create user
+    let user = state.user_repo.create(&CreateUser {
+        email: payload.email.clone(),
+        password: password_hash,
+    }).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Generate JWT
+    let jwt_secret = env::var("JWT_SECRET").unwrap_or_else(|_| "your-secret-key".to_string());
+    let token = auth::create_jwt(&user.id, &user.email, &jwt_secret)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let auth_response = AuthResponse {
+        access_token: token,
+        token_type: "Bearer".to_string(),
+        expires_in: 86400, // 24 hours in seconds
+        user: AuthUser {
+            id: user.id,
+            email: user.email,
+        },
+    };
+
+    Ok(AxumJson(ApiResponse::success(auth_response)))
+}
+
+async fn login(
+    State(state): State<AppState>,
+    Json(payload): Json<AuthRequest>,
+) -> Result<AxumJson<ApiResponse<AuthResponse>>, StatusCode> {
+    // Find user by email
+    let user = state.user_repo.find_by_email(&payload.email).await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+
+    // Verify password
+    let is_valid = auth::verify_password(&payload.password, &user.password_hash);
+
+    if !is_valid {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+
+    // Generate JWT
+    let jwt_secret = env::var("JWT_SECRET").unwrap_or_else(|_| "your-secret-key".to_string());
+    let token = auth::create_jwt(&user.id, &user.email, &jwt_secret)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let auth_response = AuthResponse {
+        access_token: token,
+        token_type: "Bearer".to_string(),
+        expires_in: 86400, // 24 hours in seconds
+        user: AuthUser {
+            id: user.id,
+            email: user.email,
+        },
+    };
+
+    Ok(AxumJson(ApiResponse::success(auth_response)))
 }
